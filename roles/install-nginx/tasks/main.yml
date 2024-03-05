@@ -1,0 +1,110 @@
+---
+
+    - name: Upgrade all packages
+      ansible.builtin.yum:
+        name: '*'
+        state: latest
+
+    - name: Add yum-utils
+      yum:
+        name:
+          - yum-utils
+        state: present
+
+    - name: Add Nginx repository
+      template:
+        src: nginx-centos-repo.j2
+        dest: /etc/yum.repos.d/nginx.repo
+
+    - name: Upgrade all packages after add repository
+      ansible.builtin.yum:
+        name: '*'
+        state: latest
+
+    - name: Install nginx
+      yum:
+        name:
+          - nginx
+        state: present
+
+    - name: Set permissions for /etc/nginx
+      file:
+        path: "{{ nginx_conf_dir }}"
+        owner: nginx
+        group: nginx
+        mode: "0755"
+        recurse: yes
+
+    - name: Create sites-available directory
+      file:
+        path: "{{ nginx_conf_dir }}/sites-available"
+        state: directory
+        mode: "0755"
+
+    - name: Create sites-enabled directory
+      file:
+        path: "{{ nginx_conf_dir }}/sites-enabled"
+        state: directory
+        mode: "0755"
+
+    - name: Set permissions for sites-available
+      file:
+        path: "{{ nginx_conf_dir }}/sites-available"
+        owner: nginx
+        group: nginx
+        mode: "0755"
+        recurse: yes
+
+    - name: Set permissions for sites-enabled
+      file:
+        path: "{{ nginx_conf_dir }}/sites-enabled"
+        owner: nginx
+        group: nginx
+        mode: "0755"
+        recurse: yes
+
+    - name: Include sites-enabled in nginx.conf
+      lineinfile:
+        path: "{{ nginx_conf_dir }}/nginx.conf"
+        line: "    include /etc/nginx/sites-enabled/*;"
+        insertafter: "^http {"
+        state: present
+
+    - name: Copy nginx config templates
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: "{{ nginx_conf_dir }}/sites-available/{{ item | basename }}"
+        owner: "{{ nginx_user }}"
+        mode: "0600"
+      with_fileglob: "templates/nginx/*"
+
+    - name: Найти файлы в директории sites-available
+      find:
+        paths: "{{ nginx_conf_dir }}/sites-available"
+        patterns: "*"
+        recurse: no
+      register: available_files
+
+    - name: Создать символические ссылки для найденных файлов
+      file:
+        src: "{{ item.path }}"
+        dest: "{{ nginx_conf_dir }}/sites-enabled/{{ item.path | basename }}"
+        state: link
+      with_items: "{{ available_files.files }}"
+
+    - name: create /var/www
+      file:
+        path: /var/www/
+        owner: nginx
+        group: nginx
+        mode: "0755"
+        recurse: yes
+
+    - name: Restart Nginx
+      systemd:
+        name: nginx
+        enabled: yes
+        state: restarted
+
+
+

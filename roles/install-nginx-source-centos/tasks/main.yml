@@ -1,0 +1,171 @@
+---
+
+    - name: Upgrade all packages
+      ansible.builtin.yum:
+        name: '*'
+        state: latest
+
+    - name: Установить необходимые пакеты для сборки
+      yum:
+        name:
+          - gcc
+          - zlib-devel
+          - openssl-devel
+          - make
+          - pcre-devel
+          - libxml2-devel
+          - libxslt-devel
+          - libgcrypt-devel
+          - gd-devel
+          - perl-ExtUtils-Embed
+          - GeoIP-devel
+        state: present
+
+    - name: Check if user exist
+      ansible.builtin.user:
+        name: "{{ nginx_user }}"
+        state: present
+
+    - name: Download nginx
+      get_url:
+        url: "{{ nginx_registry_url }}"
+        dest: "/tmp/nginx.tar.gz"
+        mode: '0755'
+
+    - name: Создать директорию перед разархивацией
+      file:
+        path: /tmp/nginx
+        state: directory
+        mode: '0755'
+
+    - name: Распаковать архив Nginx
+      shell: "tar -xzf /tmp/nginx.tar.gz -C /tmp/nginx --strip-components=1"
+
+
+    - name: Перейти в каталог с Nginx
+      shell: |
+        cd /tmp/nginx
+        ./configure \
+        --with-pcre \
+        --prefix=/opt/nginx \
+        --user=nginx \
+        --group=nginx \
+        --with-threads \
+        --with-file-aio \
+        --with-http_ssl_module \
+        --with-http_v2_module \
+        --with-http_realip_module \
+        --with-http_addition_module \
+        --with-http_xslt_module=dynamic \
+        --with-http_image_filter_module \
+        --with-http_geoip_module=dynamic \
+        --with-http_sub_module \
+        --with-http_dav_module \
+        --with-http_flv_module \
+        --with-http_mp4_module \
+        --with-http_gunzip_module \
+        --with-http_gzip_static_module \
+        --with-http_auth_request_module \
+        --with-http_random_index_module \
+        --with-http_secure_link_module \
+        --with-http_degradation_module \
+        --with-http_slice_module \
+        --with-http_stub_status_module \
+        --without-http_charset_module \
+        --with-http_perl_module \
+        --with-mail=dynamic \
+        --with-mail_ssl_module \
+        --with-stream=dynamic \
+        --with-stream_ssl_module \
+        --with-stream_realip_module \
+        --with-stream_geoip_module=dynamic \
+        --with-stream_ssl_preread_module
+        make
+        make install
+      args:
+        chdir: /tmp/nginx
+
+    - name: Create systemd service for nginx
+      template:
+        src: nginx.service.j2
+        dest: /etc/systemd/system/nginx.service
+
+    - name: Reload demon
+      systemd:
+        daemon_reload: yes
+        state: restarted
+        name: nginx
+
+    - name: Create sites-available directory
+      file:
+        path: /opt/nginx/sites-available
+        state: directory
+        mode: "0755"
+
+    - name: Create sites-enabled directory
+      file:
+        path: /opt/nginx/sites-enabled
+        state: directory
+        mode: "0755"
+
+    - name: Set permissions for sites-available
+      file:
+        path: /opt/nginx/sites-available
+        owner: nginx
+        group: nginx
+        mode: "0755"
+        recurse: yes
+
+    - name: Set permissions for sites-enabled
+      file:
+        path: /opt/nginx/sites-enabled
+        owner: nginx
+        group: nginx
+        mode: "0755"
+        recurse: yes
+
+    - name: Include sites-enabled in nginx.conf
+      lineinfile:
+        path: /opt/nginx/conf/nginx.conf
+        line: "include /opt/nginx/sites-enabled/*;"
+        insertafter: "^http {"
+        state: present
+
+    - name: Copy nginx config templates
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: "/opt/nginx/sites-available/{{ item | basename }}"
+        owner: "{{ nginx_user }}"
+        mode: "0600"
+      with_fileglob: "templates/nginx/*"
+
+    - name: Найти файлы в директории sites-available
+      find:
+        paths: /opt/nginx/sites-available
+        patterns: "*"
+        recurse: no
+      register: available_files
+
+    - name: Создать символические ссылки для найденных файлов
+      file:
+        src: "{{ item.path }}"
+        dest: "/opt/nginx/sites-enabled/{{ item.path | basename }}"
+        state: link
+      with_items: "{{ available_files.files }}"
+
+    - name: create /var/www
+      file:
+        path: /var/www/
+        owner: nginx
+        group: nginx
+        mode: "0755"
+        recurse: yes
+
+    - name: Restart Nginx
+      systemd:
+        name: nginx
+        enabled: yes
+        state: restarted
+
+
+

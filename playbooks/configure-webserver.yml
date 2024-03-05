@@ -1,0 +1,13 @@
+---
+- name: Configure web server
+  hosts: ngx-webserver
+  become: true
+  # vars_files:
+  #   - vault/sudo_password.yml   # Подключаем зашифрованный файл Vault
+
+
+  roles:
+    - role: install-nginx
+    # - role: install-nginx-source-centos
+    - role: install-php
+    - role: install-mysql
