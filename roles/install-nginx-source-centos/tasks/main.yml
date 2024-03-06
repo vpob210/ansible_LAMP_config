@@ -1,28 +1,60 @@
 ---
+    - name: Centos and RHEL block
+      block:
+        - name: Upgrade all packages
+          yum:
+            name: '*'
+            state: latest
 
-    - name: Upgrade all packages
-      ansible.builtin.yum:
-        name: '*'
-        state: latest
+        - name: Установить необходимые пакеты для сборки
+          yum:
+            name:
+              - gcc
+              - zlib-devel
+              - openssl-devel
+              - make
+              - pcre-devel
+              - libxml2-devel
+              - libxslt-devel
+              - libgcrypt-devel
+              - gd-devel
+              - perl-ExtUtils-Embed
+              - GeoIP-devel
+            state: present
+      when: ansible_distribution == 'CentOS' or ansible_distribution == 'RedHat'
+    
+    - name: Ubuntu and Debian block  
+      block:
+        - name: Apt Update
+          apt:
+            update_cache: yes
 
-    - name: Установить необходимые пакеты для сборки
-      yum:
-        name:
-          - gcc
-          - zlib-devel
-          - openssl-devel
-          - make
-          - pcre-devel
-          - libxml2-devel
-          - libxslt-devel
-          - libgcrypt-devel
-          - gd-devel
-          - perl-ExtUtils-Embed
-          - GeoIP-devel
-        state: present
+        - name: Установить необходимые пакеты для сборки
+          apt:
+            name:
+              - build-essential 
+              - libpcre3 
+              - libpcre3-dev 
+              - zlib1g 
+              - zlib1g-dev 
+              - libssl-dev 
+              - libgd-dev 
+              - libxml2 
+              - libxml2-dev 
+              - uuid-dev
+              - make
+              - libxslt1-dev
+              - libgcrypt20-dev
+              - libgd-dev
+              - perl
+              - libperl-dev
+              - libgeoip-dev
+            state: present
+      when: ansible_distribution == 'Ubuntu' or ansible_distribution == 'Debian'
 
+      
     - name: Check if user exist
-      ansible.builtin.user:
+      user:
         name: "{{ nginx_user }}"
         state: present
 

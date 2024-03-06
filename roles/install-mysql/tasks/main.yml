@@ -1,53 +1,87 @@
 ---
-    - name: Update cashe
-      yum:
-        name: '*'
-        state: latest
-      vars:
-        update_cache: yes
-    
-    - name: Import MySQL GPG Key
-      shell: sudo rpm --import https://repo.mysql.com/RPM-GPG-KEY-mysql-2022
+    - name: Centos and RHEL block
+      block:      
+        - name: Update cashe
+          yum:
+            name: '*'
+            state: latest
+          vars:
+            update_cache: yes
+        
+        - name: Import MySQL GPG Key
+          shell: sudo rpm --import https://repo.mysql.com/RPM-GPG-KEY-mysql-2022
 
-    - name: Install MySQL Community Repository
-      yum:
-        name: http://repo.mysql.com/mysql57-community-release-el7-10.noarch.rpm
-        state: present
+        - name: Install MySQL Community Repository
+          yum:
+            name: http://repo.mysql.com/mysql57-community-release-el7-10.noarch.rpm
+            state: present
 
-    - name: Install MySQL Community Server and mqsql python
-      yum:
-        name: 
-          - mysql-community-server
-          # - MySQL-python
-        state: present
+        - name: Install MySQL Community Server and mqsql python
+          yum:
+            name: 
+              - mysql-community-server
+              # - MySQL-python
+            state: present
 
-    - name: Start and enable Mysql
-      systemd:
-        name: mysqld
-        enabled: yes
-        state: restarted
+        - name: Start and enable Mysql
+          systemd:
+            name: mysqld
+            enabled: yes
+            state: restarted
 
-    - name: take temp Mysql pass
-      shell: grep 'temporary password' /var/log/mysqld.log | awk '{print $NF}'
-      register: mysql_temp_password
-      changed_when: false
-      ignore_errors: yes
+        - name: take temp Mysql pass
+          shell: grep 'temporary password' /var/log/mysqld.log | awk '{print $NF}'
+          register: mysql_temp_password
+          changed_when: false
+          ignore_errors: yes
 
-    # - debug:
-    #     msg: "{{ mysql_temp_password.stdout }}"
+        # - debug:
+        #     msg: "{{ mysql_temp_password.stdout }}"
 
-    - name: Установка нового пароля root MySQL
-      shell: "mysql -u root --connect-expired-password -e \"ALTER USER 'root'@'localhost' IDENTIFIED BY 'TempP@ssw0rd!';\""
-      environment:
-        MYSQL_PWD: "{{ mysql_temp_password.stdout }}"
+        - name: Установка нового пароля root MySQL
+          shell: "mysql -u root --connect-expired-password -e \"ALTER USER 'root'@'localhost' IDENTIFIED BY 'TempP@ssw0rd!';\""
+          environment:
+            MYSQL_PWD: "{{ mysql_temp_password.stdout }}"
 
-    # - name: install mysql root password
-    #   mysql_user:
-    #     name: root
-    #     password: "testpass"
-    #     host: localhost
-    #     login_user: root
-    #     login_password: "{{ mysql_temp_password.stdout }}"
-    #     state: present
+        # - name: install mysql root password
+        #   mysql_user:
+        #     name: root
+        #     password: "testpass"
+        #     host: localhost
+        #     login_user: root
+        #     login_password: "{{ mysql_temp_password.stdout }}"
+        #     state: present
+      when: ansible_distribution == 'CentOS' or ansible_distribution == 'RedHat'
 
+    - name: Ubuntu and Debian
+      block:
+        - name: Добавить ключ GPG для репозитория MySQL
+          apt_key:
+            keyserver: keyserver.ubuntu.com
+            id: "B7B3B788A8D3785C"
+            state: present
+
+        - name: Добавить репозиторий MySQL
+          apt_repository:
+            repo: "deb http://repo.mysql.com/apt/ubuntu bionic mysql-5.7"
+            state: present
+            update_cache: yes
+
+        - name: Установить MySQL клиент и сервер
+          apt:
+            name:
+            - mysql-client=5.7*
+            - mysql-community-server=5.7*
+            - mysql-server=5.7*
+            - python3-pymysql
+            state: present
+
+        - name: Создать пользователя root MySQL и установить пароль
+          mysql_user:
+            name: root
+            password: testpass # потом изменить при использовании сервера
+            host: localhost
+            login_unix_socket: /var/run/mysqld/mysqld.sock
+            update_password: always
+      when: ansible_distribution == 'Ubuntu' or ansible_distribution == 'Debian'
     

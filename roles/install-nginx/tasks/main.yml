@@ -1,37 +1,96 @@
 ---
+    - name: Centos and RHEL block
+      block:
+        - name: Upgrade all packages
+          ansible.builtin.yum:
+            name: '*'
+            state: latest
 
-    - name: Upgrade all packages
-      ansible.builtin.yum:
-        name: '*'
-        state: latest
+        - name: Add yum-utils
+          yum:
+            name:
+              - yum-utils
+            state: present
 
-    - name: Add yum-utils
-      yum:
-        name:
-          - yum-utils
-        state: present
+        - name: Add Nginx repository
+          template:
+            src: nginx-centos-repo.j2
+            dest: /etc/yum.repos.d/nginx.repo
 
-    - name: Add Nginx repository
-      template:
-        src: nginx-centos-repo.j2
-        dest: /etc/yum.repos.d/nginx.repo
+        - name: Upgrade all packages after add repository
+          ansible.builtin.yum:
+            name: '*'
+            state: latest
 
-    - name: Upgrade all packages after add repository
-      ansible.builtin.yum:
-        name: '*'
-        state: latest
+        - name: Install nginx
+          yum:
+            name:
+              - nginx
+            state: present
 
-    - name: Install nginx
-      yum:
-        name:
-          - nginx
-        state: present
+        - name: Include sites-enabled in nginx.conf
+          lineinfile:
+            path: "{{ nginx_conf_dir }}/nginx.conf"
+            line: "    include /etc/nginx/sites-enabled/*;"
+            insertafter: "^http {"
+            state: present
+            
+      when: ansible_distribution == 'CentOS' or ansible_distribution == 'RedHat'
+
+    - name: Ubuntu and Debian
+      block:
+        - name: Установка nginx_user для Ubuntu
+          set_fact:
+            nginx_user: "www-data"
+          when: ansible_distribution in ['Ubuntu', 'Debian']
+        - name: Install dependensies
+          apt:
+            name: "{{ item }}"
+            state: present
+            update_cache: yes
+            force_apt_get: yes
+          loop:
+            - curl
+            - gnupg2
+            - ca-certificates
+            - lsb-release 
+            - ubuntu-keyring
+        - name: Fetch the Nginx signing key
+          shell: "curl https://nginx.org/keys/nginx_signing.key | gpg --dearmor | sudo tee /usr/share/keyrings/nginx-archive-keyring.gpg >/dev/null"
+          args:
+            warn: no
+        - name: Verify the downloaded key
+          command: "gpg --dry-run --quiet --no-keyring --import --import-options import-show /usr/share/keyrings/nginx-archive-keyring.gpg"
+          register: gpg_output
+        - name: Ensure the key fingerprint matches
+          assert:
+            that:
+              - "gpg_output.stdout.find('573BFD6B3D8FBC641079A6ABABF5BD827BD9BF62') != -1"
+            msg: "The Nginx signing key fingerprint does not match. Please remove the keyring file."
+        - name: Set up the Nginx apt repository
+          command: "echo 'deb [signed-by=/usr/share/keyrings/nginx-archive-keyring.gpg] http://nginx.org/packages/ubuntu {{ ansible_distribution_release }} nginx' | sudo tee /etc/apt/sources.list.d/nginx.list"
+        - name: Update apt package cache
+          apt:
+            update_cache: yes
+        - name: Install Nginx
+          apt:
+            name: nginx
+            state: present
+        - name: Удалить файл default
+          file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - /etc/nginx/sites-available/default
+            - /etc/nginx/sites-enabled/default
+
+      when: ansible_distribution == 'Ubuntu' or ansible_distribution == 'Debian'
 
     - name: Set permissions for /etc/nginx
       file:
         path: "{{ nginx_conf_dir }}"
-        owner: nginx
-        group: nginx
+        owner: "{{ nginx_user }}"
+        group: "{{ nginx_user }}"
         mode: "0755"
         recurse: yes
 
@@ -50,25 +109,18 @@
     - name: Set permissions for sites-available
       file:
         path: "{{ nginx_conf_dir }}/sites-available"
-        owner: nginx
-        group: nginx
+        owner: "{{ nginx_user }}"
+        group: "{{ nginx_user }}"
         mode: "0755"
         recurse: yes
 
     - name: Set permissions for sites-enabled
       file:
         path: "{{ nginx_conf_dir }}/sites-enabled"
-        owner: nginx
-        group: nginx
+        owner: "{{ nginx_user }}"
+        group: "{{ nginx_user }}"
         mode: "0755"
         recurse: yes
-
-    - name: Include sites-enabled in nginx.conf
-      lineinfile:
-        path: "{{ nginx_conf_dir }}/nginx.conf"
-        line: "    include /etc/nginx/sites-enabled/*;"
-        insertafter: "^http {"
-        state: present
 
     - name: Copy nginx config templates
       ansible.builtin.copy:
@@ -95,8 +147,8 @@
     - name: create /var/www
       file:
         path: /var/www/
-        owner: nginx
-        group: nginx
+        owner: "{{ nginx_user }}"
+        group: "{{ nginx_user }}"
         mode: "0755"
         recurse: yes
 

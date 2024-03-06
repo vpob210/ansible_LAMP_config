@@ -1,94 +1,169 @@
 ---
+    - name: Centos and RHEL block
+      block:
+        - name: Обновить пакеты
+          yum:
+            name: '*'
+            state: latest
+          vars:
+            update_cache: yes
 
-    - name: Обновить пакеты
-      yum:
-        name: '*'
-        state: latest
-      vars:
-        update_cache: yes
+        - name: Установить epel-release и yum-utils
+          yum:
+            name: 
+              - epel-release
+              - yum-utils
+            state: present
 
-    - name: Установить epel-release и yum-utils
-      yum:
-        name: 
-          - epel-release
-          - yum-utils
-        state: present
+        - name: Установить remi-release
+          yum:
+            name: https://rpms.remirepo.net/enterprise/remi-release-7.rpm
+            state: present
 
-    - name: Установить remi-release
-      yum:
-        name: https://rpms.remirepo.net/enterprise/remi-release-7.rpm
-        state: present
+        - name: Обновить пакеты из remi репозитория
+          yum:
+            name: '*'
+            enablerepo: remi,remi-php81
+            state: latest
 
-    - name: Обновить пакеты из remi репозитория
-      yum:
-        name: '*'
-        enablerepo: remi,remi-php81
-        state: latest
+        - name: Удалить PHP и php-fpm
+          yum:
+            name: php,php-fpm
+            state: absent
 
-    - name: Удалить PHP и php-fpm
-      yum:
-        name: php,php-fpm
-        state: absent
+        - name: Удалить все пакеты PHP
+          yum:
+            name: php*
+            state: absent
 
-    - name: Удалить все пакеты PHP
-      yum:
-        name: php*
-        state: absent
+        - name: Отключить старые версии репозитория remi-php
+          command: yum-config-manager --disable 'remi-php*'
 
-    - name: Отключить старые версии репозитория remi-php
-      command: yum-config-manager --disable 'remi-php*'
+        - name: Включить репозиторий remi-php81
+          command: yum-config-manager --enable remi-php81
 
-    - name: Включить репозиторий remi-php81
-      command: yum-config-manager --enable remi-php81
+        - name: Установить необходимые пакеты PHP
+          yum:
+            name:
+              - php
+              - php-cli
+              - php-fpm
+              - php-mysqlnd
+              - php-zip
+              - php-devel
+              - php-gd
+              - php-mbstring
+              - php-curl
+              - php-xml
+              - php-pear
+              - php-bcmath
+              - php-json
+              - php-opcache
+              - php-redis
+              - php-memcache
+            state: present
 
-    - name: Установить необходимые пакеты PHP
-      yum:
-        name:
-          - php
-          - php-cli
-          - php-fpm
-          - php-mysqlnd
-          - php-zip
-          - php-devel
-          - php-gd
-          - php-mbstring
-          - php-curl
-          - php-xml
-          - php-pear
-          - php-bcmath
-          - php-json
-          - php-opcache
-          - php-redis
-          - php-memcache
-        state: present
+        - name: Uncomment and set listen.owner, listen.group, user, and group in www.conf
+          replace:
+            path: /etc/php-fpm.d/www.conf
+            regexp: '{{ item.regexp }}'
+            replace: '{{ item.replace }}'
+            backup: yes
+          loop:
+            - { regexp: '^;?listen.owner =.*', replace: 'listen.owner = nginx' }
+            - { regexp: '^;?listen.group =.*', replace: 'listen.group = nginx' }
+            - { regexp: '^;?user =.*', replace: 'user = nginx' }
+            - { regexp: '^;?group =.*', replace: 'group = nginx' }
+        
+        - name: Update listen parameter in www.conf
+          lineinfile:
+            path: /etc/php-fpm.d/www.conf
+            regexp: '^listen = .*'
+            line: 'listen = /var/run/php-fpm/php-fpm.sock'
+            state: present
 
-    - name: Uncomment and set listen.owner, listen.group, user, and group in www.conf
-      replace:
-        path: /etc/php-fpm.d/www.conf
-        regexp: '{{ item.regexp }}'
-        replace: '{{ item.replace }}'
-        backup: yes
-      loop:
-        - { regexp: '^;?listen.owner =.*', replace: 'listen.owner = nginx' }
-        - { regexp: '^;?listen.group =.*', replace: 'listen.group = nginx' }
-        - { regexp: '^;?user =.*', replace: 'user = nginx' }
-        - { regexp: '^;?group =.*', replace: 'group = nginx' }
-    
-    - name: Update listen parameter in www.conf
-      lineinfile:
-        path: /etc/php-fpm.d/www.conf
-        regexp: '^listen = .*'
-        line: 'listen = /var/run/php-fpm/php-fpm.sock'
-        state: present
+        - name: Add cgi.fix_pathinfo=0 to php.ini
+          lineinfile:
+            path: /etc/php.ini
+            line: 'cgi.fix_pathinfo=0'
+            insertafter: EOF
+        - name: Start and enable php-fpm
+          systemd:
+            name: php-fpm
+            enabled: yes
+            state: restarted
+      when: ansible_distribution == 'CentOS' or ansible_distribution == 'RedHat'
 
-    - name: Add cgi.fix_pathinfo=0 to php.ini
-      lineinfile:
-        path: /etc/php.ini
-        line: 'cgi.fix_pathinfo=0'
-        insertafter: EOF
+    - name: Ubuntu and Debian block
+      block:
+        - name: Apt Update 
+          apt:
+            update_cache: yes
 
-    - name: Start and enable php-fpm
-      systemd:
-        name: php-fpm
-        enabled: yes
-        state: restarted
+        - name: Install PHP 8.1 without recomends
+          apt:
+            name: php8.1
+            state: present
+            install_recommends: no
+
+        - name: Install PHP 8.1 packages
+          apt:
+            name: "{{ item }}"
+            state: present
+            update_cache: yes
+            force_apt_get: yes
+          loop:
+            - php8.1
+            - php8.1-cli
+            - php8.1-fpm
+            - php8.1-mysqlnd
+            - php8.1-zip
+            - php8.1-dev
+            - php8.1-gd
+            - php8.1-mbstring
+            - php8.1-curl
+            - php8.1-xml
+            - php-pear
+            - php8.1-bcmath
+            # - php8.1-json
+            - php8.1-opcache
+            - php8.1-redis
+            - php8.1-memcache
+        
+        - name: Uncomment and set listen.owner, listen.group, user, and group in www.conf
+          replace:
+            path: /etc/php/8.1/fpm/pool.d/www.conf
+            regexp: '{{ item.regexp }}'
+            replace: '{{ item.replace }}'
+            backup: yes
+          loop:
+            - { regexp: '^;?listen.owner =.*', replace: 'listen.owner = www-data' }
+            - { regexp: '^;?listen.group =.*', replace: 'listen.group = www-data' }
+            - { regexp: '^;?user =.*', replace: 'user = www-data' }
+            - { regexp: '^;?group =.*', replace: 'group = www-data' }
+        
+        - name: Update listen parameter in www.conf
+          lineinfile:
+            path: /etc/php/8.1/fpm/pool.d/www.conf
+            regexp: '^listen = .*'
+            line: 'listen = /var/run/php-fpm/php-fpm.sock'
+            state: present
+
+        - name: Add cgi.fix_pathinfo=0 to php.ini
+          lineinfile:
+            path: /etc/php/8.1/fpm/php.ini
+            line: 'cgi.fix_pathinfo=0'
+            insertafter: EOF
+        - name: Создать каталог для PHP-FPM сокета
+          file:
+            path: /var/run/php-fpm/
+            state: directory
+            # owner: www-data
+            # group: www-data
+            mode: '0755'
+        - name: Start and enable php-fpm
+          systemd:
+            name: php8.1-fpm
+            enabled: yes
+            state: restarted  
+      when: ansible_distribution == 'Ubuntu' or ansible_distribution == 'Debian'
